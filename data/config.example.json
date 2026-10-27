@@ -1,0 +1,28 @@
+{
+  "channel": "",
+  "nickname": "",
+  "token": "",
+  "client_id": "",
+  "client_secret": "",
+  "refresh_token": "",
+  "commands": [
+    {
+      "id": "hello",
+      "trigger": "!hello",
+      "description": "Приветствует написавшего",
+      "enabled": true,
+      "script": "hello.py",
+      "cooldown_sec": 3,
+      "permission": "all"
+    },
+    {
+      "id": "ping",
+      "trigger": "!ping",
+      "description": "Проверка, что бот отвечает",
+      "enabled": true,
+      "script": "ping.py",
+      "cooldown_sec": 2,
+      "permission": "all"
+    }
+  ]
+}
