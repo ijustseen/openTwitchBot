@@ -12,6 +12,9 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
 from app.bot import TwitchService, command_context, normalize_channel
+from app.clipboard import ClipboardError, bind_paste, insert_text, read_clipboard, write_clipboard
+from app.guide import PROMPT, open_wiki
+from app.highlight import attach_highlight, refresh_highlight
 from app.oauth import REDIRECT_URI, AuthError, login
 from app.runner import run_script
 from app.update import UpdateError, UpdateOffer, current_version, find_update, install_update, updates_supported
@@ -86,10 +89,12 @@ class App(ctk.CTk):
         )
         self.status_label = ctk.CTkLabel(top, text="Не подключён", text_color="#9aa0a6")
         self.status_label.grid(row=0, column=1, sticky="e", padx=8)
+        self.wiki_btn = ctk.CTkButton(top, text="Вики", width=70, command=self._open_wiki)
+        self.wiki_btn.grid(row=0, column=2, padx=4)
         self.start_btn = ctk.CTkButton(top, text="Старт", width=90, command=self._on_start)
-        self.start_btn.grid(row=0, column=2, padx=4)
+        self.start_btn.grid(row=0, column=3, padx=4)
         self.stop_btn = ctk.CTkButton(top, text="Стоп", width=90, command=self._on_stop, state="disabled")
-        self.stop_btn.grid(row=0, column=3, padx=(4, 4))
+        self.stop_btn.grid(row=0, column=4, padx=(4, 4))
 
         form = ctk.CTkFrame(header, fg_color="transparent")
         form.grid(row=1, column=0, columnspan=2, sticky="ew", padx=8, pady=(6, 10))
@@ -172,8 +177,17 @@ class App(ctk.CTk):
         self.perm_menu = ctk.CTkOptionMenu(editor, values=list(PERM_LABELS.values()), width=220)
         self.perm_menu.grid(row=3, column=1, sticky="w", padx=12, pady=4)
 
-        self.script_box = ctk.CTkTextbox(editor, font=ctk.CTkFont(family=MONO, size=13), wrap="none")
+        self.script_box = ctk.CTkTextbox(
+            editor,
+            font=ctk.CTkFont(family=MONO, size=13),
+            wrap="none",
+            undo=True,
+            autoseparators=True,
+            maxundo=80,
+        )
         self.script_box.grid(row=4, column=0, columnspan=2, sticky="nsew", padx=12, pady=8)
+        bind_paste(self, self.script_box)
+        attach_highlight(self.script_box)
 
         buttons = ctk.CTkFrame(editor, fg_color="transparent")
         buttons.grid(row=5, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 12))
@@ -185,10 +199,12 @@ class App(ctk.CTk):
         self.delete_btn.grid(row=0, column=1, padx=6, pady=2, sticky="w")
         self.test_btn = ctk.CTkButton(buttons, text="Проверить", command=self._test_command)
         self.test_btn.grid(row=0, column=2, padx=6, pady=2, sticky="w")
-        self.paste_btn = ctk.CTkButton(buttons, text="Вставить из буфера", command=self._paste_script)
+        self.paste_btn = ctk.CTkButton(buttons, text="Вставить", command=self._paste_script)
         self.paste_btn.grid(row=1, column=0, padx=(0, 6), pady=2, sticky="w")
         self.import_btn = ctk.CTkButton(buttons, text="Импорт .py", command=self._import_py)
-        self.import_btn.grid(row=1, column=1, columnspan=2, padx=6, pady=2, sticky="w")
+        self.import_btn.grid(row=1, column=1, padx=6, pady=2, sticky="w")
+        self.prompt_btn = ctk.CTkButton(buttons, text="Для нейросети", command=self._copy_prompt)
+        self.prompt_btn.grid(row=1, column=2, padx=6, pady=2, sticky="w")
 
         log_frame = ctk.CTkFrame(self)
         log_frame.grid(row=3, column=0, sticky="ew", padx=16, pady=(4, 14))
@@ -387,6 +403,7 @@ class App(ctk.CTk):
         self.perm_menu.set(PERM_LABELS.get(command.permission, PERM_LABELS["all"]))
         self.script_box.delete("1.0", "end")
         self.script_box.insert("1.0", read_script(command))
+        self._refresh_highlight()
         self._clean = self._snapshot()
         self._paint_selection()
 
@@ -397,6 +414,7 @@ class App(ctk.CTk):
         self._set_entry(self.cooldown_entry, "")
         self.perm_menu.set(PERM_LABELS["all"])
         self.script_box.delete("1.0", "end")
+        self._refresh_highlight()
         self._clean = self._snapshot()
         self._paint_selection()
 
@@ -469,13 +487,27 @@ class App(ctk.CTk):
             messagebox.showinfo("Команда", "Сначала выберите или создайте команду.")
             return
         try:
-            text = self.clipboard_get()
-        except Exception:
+            text = read_clipboard(self)
+        except ClipboardError:
             self.append_log("Буфер обмена пуст")
             return
-        self.script_box.delete("1.0", "end")
-        self.script_box.insert("1.0", text)
-        self.append_log("Скрипт вставлен из буфера. Нажмите «Сохранить», чтобы он заработал.")
+        self.script_box.focus()
+        insert_text(self.script_box, text)
+        self._refresh_highlight()
+        self.append_log("Текст вставлен в редактор. Нажмите «Сохранить», чтобы он заработал.")
+
+    def _refresh_highlight(self) -> None:
+        refresh_highlight(self.script_box)
+
+    def _copy_prompt(self) -> None:
+        write_clipboard(self, PROMPT)
+        self.append_log("Инструкция для нейросети скопирована. Вставьте её в чат с моделью.")
+
+    def _open_wiki(self) -> None:
+        try:
+            open_wiki()
+        except OSError:
+            self.append_log("Страница вики не найдена.")
 
     def _import_py(self) -> None:
         if not self._confirm_discard():
@@ -709,8 +741,7 @@ class LoginDialog(ctk.CTkToplevel):
         webbrowser.open("https://dev.twitch.tv/console/apps")
 
     def _copy_redirect(self) -> None:
-        self.clipboard_clear()
-        self.clipboard_append(REDIRECT_URI)
+        write_clipboard(self, REDIRECT_URI)
         self.status.configure(text="Redirect скопирован.")
 
     def _start(self) -> None:

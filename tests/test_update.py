@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from app.bundle_path import original_translocated_path
 from app.update import (
     MACOS_HELPER,
     WINDOWS_HELPER,
@@ -86,6 +87,31 @@ def test_current_version_and_support(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / "version.txt").write_text("v0.3.1\n", encoding="utf-8")
     assert current_version() == "0.3.1"
     assert updates_supported() is True
+
+
+def test_plain_path_is_not_translocated(tmp_path: Path) -> None:
+    if sys.platform != "darwin":
+        pytest.skip("только macOS")
+    marker = tmp_path / "plain.txt"
+    marker.write_text("x", encoding="utf-8")
+    assert original_translocated_path(marker) is None
+
+
+def test_translocated_bundle_uses_the_real_app(tmp_path: Path, monkeypatch) -> None:
+    real = tmp_path / "Downloads" / "OpenBot.app" / "Contents" / "MacOS" / "OpenBot"
+    real.parent.mkdir(parents=True)
+    real.write_text("x", encoding="utf-8")
+    moved = tmp_path / "AppTranslocation" / "id" / "d" / "OpenBot.app" / "Contents" / "MacOS" / "OpenBot"
+    moved.parent.mkdir(parents=True)
+    moved.write_text("x", encoding="utf-8")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(sys, "executable", str(moved))
+    monkeypatch.setattr("app.bundle_path.original_translocated_path", lambda _path: real)
+    assert install_target() == real.parents[2]
+    from app.store import user_root
+
+    assert user_root() == tmp_path / "Downloads"
 
 
 def test_install_target_follows_frozen_layout(tmp_path: Path, monkeypatch) -> None:

@@ -9,6 +9,8 @@ import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from app.bundle_path import frozen_executable, writable_root
+
 
 SCRIPT_TEMPLATE = """# ctx.user, ctx.args, ctx.message, ctx.channel, ctx.is_mod
 # ctx.reply("текст") — сообщение в чат
@@ -22,11 +24,14 @@ def run(ctx):
 def user_root() -> Path:
     """Куда пишутся настройки: рядом с исходниками или с собранным приложением."""
     if getattr(sys, "frozen", False):
-        exe = Path(sys.executable).resolve()
+        exe = frozen_executable()
         # macOS: OpenBot.app/Contents/MacOS/OpenBot → папка, где лежит .app
         if exe.parent.name == "MacOS" and exe.parent.parent.name == "Contents":
-            return exe.parents[3]
-        return exe.parent
+            try:
+                return writable_root(exe.parents[3])
+            except IndexError:
+                return writable_root(exe.parent)
+        return writable_root(exe.parent)
     return Path(__file__).resolve().parent.parent
 
 

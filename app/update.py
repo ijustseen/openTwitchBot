@@ -24,6 +24,7 @@ from pathlib import Path, PurePosixPath
 
 import certifi
 
+from app.bundle_path import frozen_executable
 from app.store import resource_root
 
 REPO = "ijustseen/openTwitchBot"
@@ -96,7 +97,7 @@ def install_target() -> Path | None:
     """Что заменять: сам .app или папка, в которой лежит OpenBot.exe."""
     if not getattr(sys, "frozen", False):
         return None
-    exe = Path(sys.executable).resolve()
+    exe = frozen_executable()
     if sys.platform == "darwin" and exe.parent.name == "MacOS" and exe.parent.parent.name == "Contents":
         return exe.parents[2]
     if sys.platform == "win32":

@@ -77,6 +77,7 @@ def build() -> Path:
         f"--add-data={data}{sep}data",
         f"--add-data={host}{sep}app",
         f"--add-data={version}{sep}.",
+        f"--add-data={ROOT / 'docs' / 'index.html'}{sep}docs",
         "--collect-all",
         "customtkinter",
         "--collect-submodules",
