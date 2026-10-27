@@ -61,14 +61,22 @@ def run(ctx):
 
 ## Сборка окна
 
-На macOS получается приложение для Mac, на Windows — для Windows. Собрать обе версии на одной машине нельзя. Для команд в собранной программе на компьютере всё равно должен быть установлен Python: скрипты запускаются им, а не упакованным окном.
+На macOS получается `OpenBot.app`, на Windows — папка с `OpenBot.exe`. Одну машину хватает только на свою систему: архив для второй собирает GitHub Actions. Для команд в собранной программе на компьютере всё равно должен быть установлен Python 3.11 или новее: скрипты запускаются им, а не упакованным окном.
+
+Локально:
 
 ```bash
-pip install pyinstaller
-# macOS и Linux
-pyinstaller --windowed --name OpenBot --add-data "data:data" main.py
-# Windows
-pyinstaller --windowed --name OpenBot --add-data "data;data" main.py
+pip install -r requirements-build.txt
+python scripts/build.py
 ```
 
-Готовый файл лежит в `dist/`. Папка `data` с настройками создаётся рядом с `.app` или `.exe`.
+Архив лежит в `dist/release/`. Папка `data` с настройками создаётся рядом с `.app` или `.exe`. Токен из вашего `data/config.json` в сборку не попадает.
+
+Релиз на GitHub собирается сам, когда в репозиторий попадает тег `v*`. Workflow лежит в `.github/workflows/release.yml`: он ставит зависимости, гоняет тесты и публикует zip для macOS (Apple Silicon) и Windows.
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Сборки без подписи. На macOS система может написать, что приложение повреждено: щёлкните `OpenBot.app` правой кнопкой и выберите «Открыть». На Windows SmartScreen предупредит, что издатель неизвестен.

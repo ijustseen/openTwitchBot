@@ -10,7 +10,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-HOST_PATH = Path(__file__).resolve().parent / "script_host.py"
 DEFAULT_TIMEOUT = 10
 
 
@@ -22,13 +21,31 @@ class RunResult:
     error: str | None
 
 
+def host_path() -> Path:
+    """Исходник, который запускает системный Python. В сборке это файл из комплекта, не байткод exe."""
+    bundled = getattr(sys, "_MEIPASS", None)
+    if bundled:
+        packed = Path(bundled) / "app" / "script_host.py"
+        if packed.is_file():
+            return packed
+    return Path(__file__).resolve().parent / "script_host.py"
+
+
 def python_executable() -> str:
     """Интерпретатор для скриптов. В собранном приложении это системный Python, не сам exe."""
-    if getattr(sys, "frozen", False):
-        found = shutil.which("python3") or shutil.which("python")
-        if found:
-            return found
-    return sys.executable
+    if not getattr(sys, "frozen", False):
+        return sys.executable
+    for name in ("python3", "python"):
+        found = shutil.which(name)
+        if not found:
+            continue
+        if "WindowsApps" in Path(found).parts:
+            continue
+        return found
+    launcher = shutil.which("py")
+    if launcher:
+        return launcher
+    raise FileNotFoundError("Для команд нужен Python 3.11 или новее в PATH")
 
 
 def run_script(script_path: Path, context: dict, timeout: float = DEFAULT_TIMEOUT) -> RunResult:
@@ -36,7 +53,7 @@ def run_script(script_path: Path, context: dict, timeout: float = DEFAULT_TIMEOU
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
         completed = subprocess.run(
-            [python_executable(), str(HOST_PATH), str(script_path)],
+            [python_executable(), str(host_path()), str(script_path)],
             input=json.dumps(context, ensure_ascii=False),
             capture_output=True,
             text=True,
