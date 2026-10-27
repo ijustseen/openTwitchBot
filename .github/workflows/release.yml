@@ -35,6 +35,8 @@ jobs:
         run: python -m pytest
 
       - name: Сборка
+        env:
+          OPENBOT_VERSION: ${{ github.ref_name }}
         run: python scripts/build.py
 
       - uses: actions/upload-artifact@v4

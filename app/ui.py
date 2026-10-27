@@ -14,6 +14,7 @@ import customtkinter as ctk
 from app.bot import TwitchService, command_context, normalize_channel
 from app.oauth import REDIRECT_URI, AuthError, login
 from app.runner import run_script
+from app.update import UpdateError, UpdateOffer, current_version, find_update, install_update, updates_supported
 from app.store import (
     Command,
     Config,
@@ -63,6 +64,11 @@ class App(ctk.CTk):
             self._clear_editor()
         self.append_log("Готово. Скрипты выполняются с правами вашего пользователя.")
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._update_offer: UpdateOffer | None = None
+        self._updating = False
+        if updates_supported():
+            self.append_log(f"Версия {current_version()}.")
+            self.after(300, self._check_updates)
 
     def _build(self) -> None:
         self.grid_columnconfigure(0, weight=1)
@@ -101,6 +107,17 @@ class App(ctk.CTk):
         self._show_token.grid(row=0, column=6, padx=(8, 4))
         self.login_btn = ctk.CTkButton(form, text="Войти через Twitch", width=200, command=self._open_login)
         self.login_btn.grid(row=1, column=0, columnspan=4, sticky="w", padx=(4, 0), pady=(8, 0))
+
+        self.update_bar = ctk.CTkFrame(header)
+        self.update_bar.grid(row=2, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8))
+        self.update_bar.grid_columnconfigure(0, weight=1)
+        self.update_label = ctk.CTkLabel(self.update_bar, text="", anchor="w")
+        self.update_label.grid(row=0, column=0, sticky="ew", padx=10, pady=8)
+        self.update_later = ctk.CTkButton(self.update_bar, text="Позже", width=80, command=self._dismiss_update)
+        self.update_later.grid(row=0, column=1, padx=4, pady=8)
+        self.update_now = ctk.CTkButton(self.update_bar, text="Обновить", width=110, command=self._confirm_update)
+        self.update_now.grid(row=0, column=2, padx=(4, 10), pady=8)
+        self.update_bar.grid_remove()
 
         if self.cfg.channel:
             self.channel_entry.insert(0, self.cfg.channel)
@@ -543,6 +560,93 @@ class App(ctk.CTk):
                 self.set_status("error", "не остановился")
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _check_updates(self) -> None:
+        if self._closing or not updates_supported():
+            return
+
+        def work() -> None:
+            try:
+                offer = find_update()
+            except UpdateError as exc:
+                message = str(exc)
+                self.after(0, lambda message=message: self.append_log(f"Не удалось проверить обновления: {message}"))
+                return
+            if offer is None or self._closing:
+                return
+            self.after(0, lambda offer=offer: self._show_update(offer))
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _show_update(self, offer: UpdateOffer) -> None:
+        if self._closing or not self.winfo_exists() or self._updating:
+            return
+        self._update_offer = offer
+        self.update_label.configure(text=f"Доступна версия {offer.version}.")
+        self.update_bar.grid()
+        self.append_log(f"Доступна версия {offer.version}.")
+
+    def _dismiss_update(self) -> None:
+        self._update_offer = None
+        self.update_bar.grid_remove()
+
+    def _confirm_update(self) -> None:
+        offer = self._update_offer
+        if offer is None or self._updating:
+            return
+        if not messagebox.askyesno(
+            "Обновление",
+            f"Скачать версию {offer.version} и перезапустить OpenBot?\n\nНастройки и команды сохранятся.",
+            parent=self,
+        ):
+            return
+        self._updating = True
+        self.update_now.configure(state="disabled")
+        self.update_later.configure(state="disabled")
+        self.update_label.configure(text=f"Скачивание {offer.version}…")
+        version = offer.version
+
+        def progress(read: int, total: int) -> None:
+            if total <= 0:
+                return
+            percent = min(100, int(read * 100 / total))
+            self.after(0, lambda percent=percent: self._set_update_progress(version, percent))
+
+        def work() -> None:
+            try:
+                install_update(offer, progress)
+            except UpdateError as exc:
+                message = str(exc)
+                self.after(0, lambda message=message: self._update_failed(message))
+                return
+            except Exception:
+                self.after(0, lambda: self._update_failed("Не удалось скачать обновление."))
+                return
+            self.after(0, self._restart_for_update)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _set_update_progress(self, version: str, percent: int) -> None:
+        if self._closing or not self.winfo_exists():
+            return
+        self.update_label.configure(text=f"Скачивание {version}… {percent}%")
+
+    def _update_failed(self, message: str) -> None:
+        self._updating = False
+        if self._closing or not self.winfo_exists():
+            return
+        self.update_now.configure(state="normal")
+        self.update_later.configure(state="normal")
+        if self._update_offer is not None:
+            self.update_label.configure(text=f"Доступна версия {self._update_offer.version}.")
+        self.append_log(message)
+        messagebox.showerror("Обновление", message, parent=self)
+
+    def _restart_for_update(self) -> None:
+        if self._closing:
+            return
+        self.append_log("Обновление скачано. Перезапуск…")
+        self._on_close()
 
     def _on_close(self) -> None:
         self._closing = True

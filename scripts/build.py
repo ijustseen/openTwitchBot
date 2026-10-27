@@ -7,32 +7,21 @@
 from __future__ import annotations
 
 import os
-import platform
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from app.update import normalize_version, platform_tag  # noqa: E402
+
 DIST = ROOT / "dist"
 WORK = ROOT / "build"
 STAGE = WORK / "bundle-data"
 RELEASE = DIST / "release"
-
-
-def platform_tag() -> str:
-    machine = platform.machine().lower()
-    arch = {
-        "arm64": "arm64",
-        "aarch64": "arm64",
-        "x86_64": "x64",
-        "amd64": "x64",
-    }.get(machine, machine)
-    if sys.platform == "darwin":
-        return f"macos-{arch}"
-    if sys.platform == "win32":
-        return f"windows-{arch}"
-    return f"{sys.platform}-{arch}"
 
 
 def stage_data() -> Path:
@@ -53,10 +42,18 @@ def stage_data() -> Path:
     return dest
 
 
+def version_file() -> Path:
+    WORK.mkdir(parents=True, exist_ok=True)
+    path = WORK / "version.txt"
+    path.write_text(normalize_version(os.environ.get("OPENBOT_VERSION", "")) + "\n", encoding="utf-8")
+    return path
+
+
 def build() -> Path:
     data = stage_data()
     sep = os.pathsep
     host = ROOT / "app" / "script_host.py"
+    version = version_file()
     for stale in (DIST / "OpenBot", DIST / "OpenBot.app"):
         if stale.is_dir():
             shutil.rmtree(stale)
@@ -79,6 +76,7 @@ def build() -> Path:
         str(WORK),
         f"--add-data={data}{sep}data",
         f"--add-data={host}{sep}app",
+        f"--add-data={version}{sep}.",
         "--collect-all",
         "customtkinter",
         "--collect-submodules",
