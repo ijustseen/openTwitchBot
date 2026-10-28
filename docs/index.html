@@ -3,117 +3,218 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OpenBot — как устроено</title>
+  <title>OpenBot — как пользоваться</title>
   <style>
     :root {
       color-scheme: dark;
-      --bg: #121417;
-      --card: #1b1e24;
-      --text: #e7e9ee;
-      --muted: #9aa0a6;
-      --line: #2c313a;
-      --accent: #8eb6ff;
-      --code: #b5d99c;
+      --bg: #0c0f14;
+      --panel: #141922;
+      --card: #1a2130;
+      --text: #e8edf7;
+      --muted: #93a0b5;
+      --line: #2a3344;
+      --accent: #7eb0ff;
+      --accent-2: #3ddc84;
+      --warn: #e6b35a;
+      --code: #b7e0a1;
     }
     * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
     body {
       margin: 0;
       background: var(--bg);
       color: var(--text);
-      font: 17px/1.55 "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+      font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     }
-    main { max-width: 740px; margin: 0 auto; padding: 48px 22px 80px; }
-    h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 8px; }
-    h2 { font-size: 1.25rem; margin: 2.2rem 0 0.6rem; }
-    p, li { color: var(--text); }
-    .lead { color: var(--muted); margin-top: 0; }
-    a { color: var(--accent); }
-    nav { margin: 22px 0 8px; padding: 14px 16px; background: var(--card); border-radius: 12px; }
-    nav a { display: inline-block; margin: 0 12px 6px 0; text-decoration: none; }
-    code, pre {
-      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-      font-size: 0.86rem;
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .layout {
+      display: grid;
+      grid-template-columns: 240px minmax(0, 760px);
+      gap: 36px;
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 28px 24px 80px;
     }
-    code { color: var(--code); }
-    pre {
+    nav {
+      position: sticky;
+      top: 20px;
+      align-self: start;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px 14px;
+    }
+    nav p {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    nav a {
+      display: block;
+      color: var(--text);
+      padding: 7px 10px;
+      border-radius: 8px;
+    }
+    nav a:hover { background: var(--card); text-decoration: none; }
+    h1 { font-size: 2.1rem; line-height: 1.15; margin: 0 0 10px; }
+    h2 { font-size: 1.35rem; margin: 2.4rem 0 0.7rem; }
+    .lead { color: var(--muted); margin: 0 0 22px; font-size: 1.05rem; }
+    .steps { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+    .steps li, .card, .note, pre, table {
       background: var(--card);
       border: 1px solid var(--line);
-      border-radius: 12px;
+      border-radius: 14px;
+    }
+    .steps li { display: grid; grid-template-columns: 36px 1fr; gap: 12px; padding: 14px 16px; }
+    .num {
+      width: 36px; height: 36px; border-radius: 10px;
+      display: grid; place-items: center;
+      background: #243044; color: var(--accent); font-weight: 700;
+    }
+    .steps strong { display: block; margin-bottom: 2px; }
+    .steps p, .card p { margin: 0; color: var(--muted); }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .card { padding: 14px 16px; }
+    .card h3 { margin: 0 0 6px; font-size: 1rem; }
+    code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.86rem; }
+    code { color: var(--code); }
+    pre {
       padding: 14px 16px;
       overflow: auto;
       line-height: 1.45;
       white-space: pre-wrap;
     }
-    table { width: 100%; border-collapse: collapse; margin: 8px 0 4px; }
-    th, td { text-align: left; vertical-align: top; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--line); }
-    th { color: var(--muted); font-weight: 600; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.85rem; }
+    table { width: 100%; border-collapse: collapse; overflow: hidden; }
+    th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-size: 0.8rem; font-weight: 650; }
+    tr:last-child td { border-bottom: 0; }
+    .note { padding: 12px 14px; color: var(--muted); }
+    .note strong { color: var(--warn); }
+    @media (max-width: 860px) {
+      .layout { grid-template-columns: 1fr; gap: 18px; }
+      nav { position: static; }
+      nav a { display: inline-block; }
+      .grid { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
-<main>
-  <h1>OpenBot</h1>
-  <p class="lead">Окно на вашем компьютере сидит в чате Twitch и отвечает на команды вроде <code>!hello</code>. Что делает команда, решает обычный файл Python.</p>
+<div class="layout">
   <nav>
-    <a href="#start">Запуск</a>
+    <p>На странице</p>
+    <a href="#start">С чего начать</a>
     <a href="#login">Вход</a>
     <a href="#commands">Команды</a>
-    <a href="#ctx">Поля ctx</a>
+    <a href="#ctx">Что есть в ctx</a>
     <a href="#run">Как выполняется</a>
     <a href="#ai">Для нейросети</a>
-    <a href="#files">Файлы</a>
+    <a href="#files">Где файлы</a>
     <a href="#build">Сборка</a>
   </nav>
+  <main>
+    <h1>OpenBot</h1>
+    <p class="lead">Окно на вашем компьютере сидит в чате Twitch и отвечает на команды вроде <code>!hello</code>. Что делает команда, решает обычный файл Python.</p>
 
-  <h2 id="start">Запуск</h2>
-  <p>Нужен Python 3.11 или новее.</p>
-  <pre>python3 -m venv .venv
+    <h2 id="start">С чего начать</h2>
+    <ol class="steps">
+      <li>
+        <span class="num">1</span>
+        <div>
+          <strong>Откройте окно</strong>
+          <p>Дважды щёлкните <code>OpenBot.app</code> или <code>OpenBot.exe</code>. Из исходников: Python 3.11+, затем команды ниже.</p>
+        </div>
+      </li>
+      <li>
+        <span class="num">2</span>
+        <div>
+          <strong>Войдите через Twitch</strong>
+          <p>Кнопка в шапке. Аккаунт, который войдёт в браузере, и будет писать ответы в чат.</p>
+        </div>
+      </li>
+      <li>
+        <span class="num">3</span>
+        <div>
+          <strong>Укажите канал и нажмите «Старт»</strong>
+          <p>В поле «Канал» — чей чат слушать, без решётки. Когда статус станет «В сети», бот уже в чате.</p>
+        </div>
+      </li>
+      <li>
+        <span class="num">4</span>
+        <div>
+          <strong>Добавьте команду</strong>
+          <p>«Новая команда», триггер вроде <code>!hello</code>, текст скрипта, «Сохранить». В чат можно писать сразу.</p>
+        </div>
+      </li>
+    </ol>
+    <pre>python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 python main.py</pre>
-  <p>На Windows виртуальное окружение включается командой <code>.venv\Scripts\activate</code>. Собранное приложение запускается двойным щелчком по <code>OpenBot.app</code> или <code>OpenBot.exe</code>. Для самих команд Python на компьютере всё равно нужен: их выполняет он, а не упакованное окно.</p>
+    <p>На Windows окружение включается командой <code>.venv\Scripts\activate</code>. Сами команды выполняет Python на компьютере, даже если окно собрано в приложение.</p>
 
-  <h2 id="login">Вход в чат</h2>
-  <p>Токен выдаёт ваше приложение на <a href="https://dev.twitch.tv/console/apps">dev.twitch.tv/console/apps</a>. В OAuth Redirect URL вставьте ровно <code>http://localhost:17563/callback</code>. Категория — Chat Bot. Client Secret Twitch показывает один раз.</p>
-  <p>В окне нажмите «Войти через Twitch», вставьте Client ID и Client Secret и подтвердите вход в браузере тем аккаунтом, от которого бот будет писать. В поле «Канал» укажите, чей чат слушать, и нажмите «Старт».</p>
-  <p>Свой аккаунт канала подходит: ответы идут от вашего ника. Отдельному аккаунту бота нужен модератор, иначе режим «только для фолловеров», «только для подписчиков» или медленный режим может спрятать его сообщения. Когда токен истечёт, окно обновит его само, пока доступ не отозван в настройках Twitch.</p>
+    <h2 id="login">Вход</h2>
+    <div class="grid">
+      <article class="card">
+        <h3>Один раз в консоли Twitch</h3>
+        <p>На <a href="https://dev.twitch.tv/console/apps">dev.twitch.tv/console/apps</a> зарегистрируйте приложение. Redirect URL вставьте точно: <code>http://localhost:17563/callback</code>. Категория — Chat Bot. Client Secret Twitch показывает один раз.</p>
+      </article>
+      <article class="card">
+        <h3>Потом в окне</h3>
+        <p>«Войти через Twitch», Client ID и Client Secret, затем «Открыть браузер и войти». В шапке появится «Аккаунт: ник». Ник и токен вручную вводить не нужно.</p>
+      </article>
+    </div>
+    <p class="note"><strong>Чей аккаунт.</strong> Свой аккаунт канала подходит: ответы идут от вашего ника. Отдельному аккаунту бота нужен модератор, иначе режим «только для фолловеров», «только для подписчиков» или медленный режим может спрятать его сообщения. Когда токен истечёт, окно обновит его само, пока доступ не отозван в настройках Twitch.</p>
 
-  <h2 id="commands">Команды</h2>
-  <p>Новая команда — это функция <code>run(ctx)</code>. Сообщение <code>!hello мир</code> попадает в команду <code>!hello</code>, а слово «мир» оказывается в <code>ctx.args</code>. Регистр команды не важен.</p>
-  <ul>
-    <li>Переключатель в списке выключает команду и оставляет её на месте.</li>
-    <li>«Удалить» убирает команду и файл скрипта.</li>
-    <li>«Сохранить» сразу начинает действовать, даже если бот уже в сети.</li>
-    <li>«Проверить» гоняет текст из редактора. В чат ничего не уходит. Пользователь в проверке — <code>tester</code>, аргумент — <code>пример</code>, владелец канала — да, модератор — нет.</li>
-    <li>«Импорт .py» копирует файл в папку команд.</li>
-    <li>Кулдаун общий на команду, а не на каждого зрителя.</li>
-    <li>Режим «Модераторы и стример» пускает модераторов и владельца канала. Остальные до скрипта не доходят.</li>
-  </ul>
+    <h2 id="commands">Команды</h2>
+    <p>Команда — функция <code>run(ctx)</code>. Сообщение <code>!hello мир</code> попадает в команду <code>!hello</code>, слово «мир» — в <code>ctx.args</code>. Регистр команды не важен. «Сохранить» действует сразу, даже если бот уже в сети.</p>
+    <div class="grid">
+      <article class="card">
+        <h3>Список слева</h3>
+        <p>Переключатель выключает команду и оставляет её на месте. Щелчок по строке открывает её в редакторе.</p>
+      </article>
+      <article class="card">
+        <h3>Кнопки справа</h3>
+        <p>«Проверить» гоняет скрипт без отправки в чат. «Вставить» добавляет код из буфера. «Для нейросети» копирует инструкцию, чтобы модель написала команду в нужном виде.</p>
+      </article>
+      <article class="card">
+        <h3>Кулдаун</h3>
+        <p>Общий на команду, а не на каждого зрителя. Пустое поле — без паузы.</p>
+      </article>
+      <article class="card">
+        <h3>Кто может вызвать</h3>
+        <p>«Модераторы и стример» пускает модераторов и владельца канала. Остальные до скрипта не доходят.</p>
+      </article>
+    </div>
+    <p>«Проверить» подставляет пользователя <code>tester</code>, аргумент <code>пример</code>, владельца канала — да, модератора — нет. «Удалить» убирает команду и файл скрипта.</p>
 
-  <h2 id="ctx">Поля ctx</h2>
-  <p>Для сообщения <code>!hello мир всем</code> от зрителя <code>CoolUser</code> на канале <code>mychannel</code>:</p>
-  <table>
-    <tr><th>Поле</th><th>Что внутри</th></tr>
-    <tr><td><code>ctx.user</code></td><td>Отображаемое имя, <code>CoolUser</code></td></tr>
-    <tr><td><code>ctx.user_id</code></td><td>Числовой id Twitch. При смене ника не меняется</td></tr>
-    <tr><td><code>ctx.args</code></td><td>Слова после команды: <code>["мир", "всем"]</code>. Без слов список пустой</td></tr>
-    <tr><td><code>ctx.message</code></td><td>Вся строка: <code>!hello мир всем</code></td></tr>
-    <tr><td><code>ctx.channel</code></td><td>Канал из настроек, строчными и без решётки</td></tr>
-    <tr><td><code>ctx.is_mod</code></td><td>Модератор или владелец канала</td></tr>
-    <tr><td><code>ctx.is_broadcaster</code></td><td>Только владелец канала</td></tr>
-  </table>
-  <p><code>ctx.reply("текст")</code> пишет в чат. Можно вызвать несколько раз: уйдут первые 5 непустых ответов, каждый до 500 символов. <code>print(...)</code> виден только в логе окна.</p>
-  <pre>def run(ctx):
+    <h2 id="ctx">Что есть в ctx</h2>
+    <p>Для сообщения <code>!hello мир всем</code> от зрителя <code>CoolUser</code> на канале <code>mychannel</code>:</p>
+    <table>
+      <tr><th>Поле</th><th>Что внутри</th></tr>
+      <tr><td><code>ctx.user</code></td><td>Отображаемое имя, <code>CoolUser</code></td></tr>
+      <tr><td><code>ctx.user_id</code></td><td>Числовой id Twitch. При смене ника не меняется</td></tr>
+      <tr><td><code>ctx.args</code></td><td>Слова после команды: <code>["мир", "всем"]</code>. Без слов список пустой</td></tr>
+      <tr><td><code>ctx.message</code></td><td>Вся строка: <code>!hello мир всем</code></td></tr>
+      <tr><td><code>ctx.channel</code></td><td>Канал из настроек, строчными и без решётки</td></tr>
+      <tr><td><code>ctx.is_mod</code></td><td>Модератор или владелец канала</td></tr>
+      <tr><td><code>ctx.is_broadcaster</code></td><td>Только владелец канала</td></tr>
+    </table>
+    <p><code>ctx.reply("текст")</code> пишет в чат. Можно вызвать несколько раз: уйдут первые 5 непустых ответов, каждый до 500 символов. <code>print(...)</code> виден только в логе окна.</p>
+    <pre>def run(ctx):
     if not ctx.args:
         ctx.reply(f"@{ctx.user}, напишите имя после команды")
         return
     ctx.reply(f"{ctx.user}: {' '.join(ctx.args)}")</pre>
 
-  <h2 id="run">Как выполняется скрипт</h2>
-  <p>Команда запускается отдельным процессом Python и обрывается примерно через 10 секунд, чтобы ошибка не закрыла окно. <code>run</code> нельзя делать <code>async</code>. Песочницы нет: скрипт может читать файлы, ходить в сеть и запускать программы от вашего имени. Токен Twitch в команду класть не нужно.</p>
+    <h2 id="run">Как выполняется скрипт</h2>
+    <p>Команда запускается отдельным процессом Python и обрывается примерно через 10 секунд, чтобы ошибка не закрыла окно. <code>run</code> нельзя делать <code>async</code>. Песочницы нет: скрипт может читать файлы, ходить в сеть и запускать программы от вашего имени. Токен Twitch в команду класть не нужно.</p>
 
-  <h2 id="ai">Инструкция для нейросети</h2>
-  <p>Кнопка «Для нейросети» в окне копирует тот же текст. Его вставляют в чат с моделью перед просьбой написать команду.</p>
-  <pre>Ты пишешь команду для локального Twitch-бота OpenBot.
+    <h2 id="ai">Инструкция для нейросети</h2>
+    <p>Кнопка «Для нейросети» в окне копирует тот же текст. Вставьте его в чат с моделью перед просьбой написать команду.</p>
+    <pre>Ты пишешь команду для локального Twitch-бота OpenBot.
 Команда — это один файл Python с функцией run(ctx). Функция обычная, не async.
 
 Что приходит в ctx, когда зритель пишет в чат, например, «!hello мир всем» на канале mychannel:
@@ -148,13 +249,15 @@ def run(ctx):
 
 Когда пользователь просит команду, верни полный файл, который можно сохранить как есть.</pre>
 
-  <h2 id="files">Где что лежит</h2>
-  <p>Рядом с программой появляется папка <code>data</code>. В <code>data/config.json</code> канал, токен и список команд. Сами скрипты — в <code>data/commands</code>. Файл с токеном в git не попадает. У собранного приложения на macOS эта папка лежит рядом с <code>OpenBot.app</code>, на Windows — рядом с <code>OpenBot.exe</code>.</p>
+    <h2 id="files">Где что лежит</h2>
+    <p>Рядом с программой появляется папка <code>data</code>. В <code>data/config.json</code> канал, токен и список команд. Сами скрипты — в <code>data/commands</code>. Файл с токеном в git не попадает. У собранного приложения на macOS эта папка лежит рядом с <code>OpenBot.app</code>, на Windows — рядом с <code>OpenBot.exe</code>.</p>
 
-  <h2 id="build">Сборка и обновления</h2>
-  <p>На macOS получается приложение для Mac, на Windows — для Windows. Обе системы на одном компьютере не собрать. Релиз на GitHub появляется после тега <code>v*</code>: туда кладутся zip для macOS (Apple Silicon) и Windows.</p>
-  <p>Собранное окно с номером версии само смотрит последний релиз. Кнопка «Обновить» скачивает архив для этой системы и перезапускает программу. Папку <code>data</code> оно не заменяет. Запуск через <code>python main.py</code> обновления не ставит.</p>
-  <p>Сборки не проходят проверку Apple: для этого нужен платный сертификат Developer ID и нотаризация. Если при первом открытии macOS пишет, что не удалось подтвердить отсутствие вредоносного ПО, нажмите «Готово», затем «Системные настройки» → «Конфиденциальность и безопасность» и внизу «Всё равно открыть» рядом с OpenBot. На Windows SmartScreen предупредит, что издатель неизвестен.</p>
-</main>
+    <h2 id="build">Сборка и обновления</h2>
+    <p>На macOS получается приложение для Mac, на Windows — для Windows. Обе системы на одном компьютере не собрать. Релиз на GitHub появляется после тега <code>v*</code>: туда кладутся zip для macOS (Apple Silicon) и Windows.</p>
+    <p>Собранное окно с номером версии само смотрит последний релиз. Полоска «Доступна версия» предлагает «Обновить»: архив скачивается, программа перезапускается, папка <code>data</code> остаётся. Запуск через <code>python main.py</code> обновления не ставит. У версии 0.1.1 этой кнопки ещё нет.</p>
+    <p>Код OpenBot под лицензией MIT: им можно пользоваться и делиться, если сохраняется уведомление об авторстве CnoLvaN.</p>
+    <p class="note"><strong>Первый запуск на Mac.</strong> Сборки не проходят проверку Apple: для этого нужен платный сертификат Developer ID. Если система пишет, что не удалось подтвердить отсутствие вредоносного ПО, нажмите «Готово», затем «Системные настройки» → «Конфиденциальность и безопасность» и внизу «Всё равно открыть» рядом с OpenBot. На Windows SmartScreen предупредит, что издатель неизвестен.</p>
+  </main>
+</div>
 </body>
 </html>

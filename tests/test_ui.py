@@ -129,3 +129,34 @@ def test_update_bar_shows_newer_version(tmp_path: Path, monkeypatch) -> None:
         assert not app.update_bar.winfo_ismapped()
     finally:
         app.destroy()
+
+
+def test_stop_is_available_only_while_the_bot_is_online(tmp_path: Path, monkeypatch) -> None:
+    import app.store as store
+
+    monkeypatch.setattr(store, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(store, "COMMANDS_DIR", tmp_path / "commands")
+    monkeypatch.setattr(store, "CONFIG_PATH", tmp_path / "config.json")
+    monkeypatch.setattr(store, "EXAMPLE_PATH", tmp_path / "config.example.json")
+
+    app = App()
+    try:
+        app.bot.running = lambda: True  # type: ignore[method-assign]
+        app.set_status("connecting", "")
+        app.update()
+        assert str(app.stop_btn.cget("state")) == "disabled"
+        assert str(app.start_btn.cget("state")) == "disabled"
+        app.set_status("online", "")
+        app.update()
+        assert str(app.stop_btn.cget("state")) == "normal"
+        assert str(app.start_btn.cget("state")) == "disabled"
+        app.set_status("stopping", "")
+        app.update()
+        assert str(app.start_btn.cget("state")) == "disabled"
+        app.bot.running = lambda: False  # type: ignore[method-assign]
+        app.set_status("idle", "")
+        app.update()
+        assert str(app.start_btn.cget("state")) == "normal"
+        assert str(app.stop_btn.cget("state")) == "disabled"
+    finally:
+        app.destroy()

@@ -113,6 +113,65 @@ def test_example_hello_uses_args() -> None:
     assert result.replies == ["Привет, мир!"]
 
 
+def test_release_loop_closes_session_and_pending_tasks() -> None:
+    import asyncio
+
+    from app.bot import _release_loop
+
+    class Session:
+        def __init__(self) -> None:
+            self.closed = False
+
+        async def close(self) -> None:
+            self.closed = True
+
+    class Bot:
+        class HTTP:
+            session = Session()
+
+        _http = HTTP()
+
+    async def hang() -> None:
+        await asyncio.sleep(30)
+
+    async def probe() -> None:
+        asyncio.get_running_loop().create_task(hang())
+        await asyncio.sleep(0)
+        await _release_loop(Bot())
+
+    asyncio.run(probe())
+    assert Bot._http.session.closed
+
+
+def test_release_loop_gives_up_on_a_stuck_session() -> None:
+    import asyncio
+    import time
+
+    from app.bot import _release_loop
+
+    class Session:
+        def __init__(self) -> None:
+            self.closed = False
+
+        async def close(self) -> None:
+            await asyncio.sleep(30)
+            self.closed = True
+
+    class Bot:
+        class HTTP:
+            session = Session()
+
+        _http = HTTP()
+
+    async def probe() -> None:
+        await _release_loop(Bot())
+
+    started = time.monotonic()
+    asyncio.run(probe())
+    assert time.monotonic() - started < 5
+    assert not Bot._http.session.closed
+
+
 def test_client_accepts_token_and_channel() -> None:
     import asyncio
 

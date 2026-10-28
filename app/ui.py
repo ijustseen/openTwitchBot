@@ -7,7 +7,7 @@ import tempfile
 import threading
 import webbrowser
 from pathlib import Path
-from tkinter import filedialog, messagebox
+from tkinter import messagebox
 
 import customtkinter as ctk
 
@@ -23,7 +23,6 @@ from app.store import (
     Config,
     create_command,
     delete_command_file,
-    import_script,
     load_config,
     parse_cooldown,
     read_script,
@@ -39,6 +38,23 @@ PERM_LABELS = {
 PERM_BY_LABEL = {label: key for key, label in PERM_LABELS.items()}
 
 MONO = "Menlo" if sys.platform == "darwin" else "Consolas"
+BG = "#0c0f14"
+CARD = "#161b24"
+LINE = "#2a3344"
+INK = "#e8eef8"
+MUTED = "#8e9aaf"
+ACCENT = "#4c8dff"
+ACCENT_HOVER = "#3a74e0"
+SOFT = "#222a38"
+DANGER = "#d45454"
+DANGER_HOVER = "#b84343"
+DANGER_OFF = "#3a2428"
+OK = "#3ddc84"
+START = "#2f9e62"
+START_HOVER = "#278554"
+START_OFF = "#1a3326"
+AI = "#6a5cff"
+AI_HOVER = "#5748e6"
 
 
 class App(ctk.CTk):
@@ -47,11 +63,13 @@ class App(ctk.CTk):
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
         self.title("OpenBot")
-        self.geometry("1100x840")
-        self.minsize(960, 740)
+        self.geometry("1180x860")
+        self.minsize(1040, 760)
+        self.configure(fg_color=BG)
 
         self.cfg: Config = load_config()
         self._closing = False
+        self._status_kind = "idle"
         self._selected_id: str | None = None
         self._clean: tuple[str, str, str, str, str] | None = None
         self._building = False
@@ -65,7 +83,10 @@ class App(ctk.CTk):
             self._show_command(self.cfg.commands[0].id)
         else:
             self._clear_editor()
-        self.append_log("Готово. Скрипты выполняются с правами вашего пользователя.")
+        if self.cfg.nickname.strip():
+            self.append_log(f"Окно готово. Аккаунт {self.cfg.nickname.strip()}. Укажите канал и нажмите «Старт».")
+        else:
+            self.append_log("Окно готово. Войдите через Twitch, укажите канал и нажмите «Старт».")
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self._update_offer: UpdateOffer | None = None
         self._updating = False
@@ -73,110 +94,170 @@ class App(ctk.CTk):
             self.append_log(f"Версия {current_version()}.")
             self.after(300, self._check_updates)
 
+    def _card(self, parent) -> ctk.CTkFrame:
+        return ctk.CTkFrame(parent, fg_color=CARD, corner_radius=16, border_width=1, border_color=LINE)
+
+    def _ghost(self, parent, text: str, command, width: int = 0) -> ctk.CTkButton:
+        return ctk.CTkButton(
+            parent,
+            text=text,
+            command=command,
+            width=width,
+            height=34,
+            fg_color="transparent",
+            border_width=1,
+            border_color=LINE,
+            hover_color=SOFT,
+            text_color=INK,
+        )
+
     def _build(self) -> None:
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(2, weight=1)
+        self.grid_rowconfigure(1, weight=1)
 
-        header = ctk.CTkFrame(self)
-        header.grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 6))
-        header.grid_columnconfigure(1, weight=1)
+        header = self._card(self)
+        header.grid(row=0, column=0, sticky="ew", padx=18, pady=(16, 8))
+        header.grid_columnconfigure(0, weight=1)
 
         top = ctk.CTkFrame(header, fg_color="transparent")
-        top.grid(row=0, column=0, columnspan=2, sticky="ew", padx=8, pady=(8, 0))
+        top.grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 0))
         top.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(top, text="OpenBot", font=ctk.CTkFont(size=22, weight="bold")).grid(
-            row=0, column=0, sticky="w", padx=4
+        title = ctk.CTkFrame(top, fg_color="transparent")
+        title.grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(title, text="OpenBot", font=ctk.CTkFont(size=24, weight="bold"), text_color=INK).pack(
+            side="left"
         )
-        self.status_label = ctk.CTkLabel(top, text="Не подключён", text_color="#9aa0a6")
-        self.status_label.grid(row=0, column=1, sticky="e", padx=8)
-        self.wiki_btn = ctk.CTkButton(top, text="Вики", width=70, command=self._open_wiki)
-        self.wiki_btn.grid(row=0, column=2, padx=4)
-        self.start_btn = ctk.CTkButton(top, text="Старт", width=90, command=self._on_start)
-        self.start_btn.grid(row=0, column=3, padx=4)
-        self.stop_btn = ctk.CTkButton(top, text="Стоп", width=90, command=self._on_stop, state="disabled")
-        self.stop_btn.grid(row=0, column=4, padx=(4, 4))
+        ctk.CTkLabel(title, text="чат-бот Twitch", text_color=MUTED).pack(side="left", padx=(10, 0))
+        status = ctk.CTkFrame(top, fg_color=SOFT, corner_radius=12)
+        status.grid(row=0, column=1, sticky="e")
+        self.status_dot = ctk.CTkLabel(status, text="●", text_color=MUTED, width=16)
+        self.status_dot.pack(side="left", padx=(10, 0), pady=6)
+        self.status_label = ctk.CTkLabel(status, text="Не подключён", text_color=MUTED)
+        self.status_label.pack(side="left", padx=(2, 12), pady=6)
 
         form = ctk.CTkFrame(header, fg_color="transparent")
-        form.grid(row=1, column=0, columnspan=2, sticky="ew", padx=8, pady=(6, 10))
-        form.grid_columnconfigure(5, weight=1)
-        ctk.CTkLabel(form, text="Канал").grid(row=0, column=0, sticky="w", padx=(4, 6))
-        self.channel_entry = ctk.CTkEntry(form, width=150, placeholder_text="mychannel")
+        form.grid(row=1, column=0, sticky="ew", padx=16, pady=(12, 4))
+        form.grid_columnconfigure(3, weight=1)
+        ctk.CTkLabel(form, text="Канал", text_color=MUTED).grid(row=0, column=0, sticky="w", padx=(0, 8))
+        self.channel_entry = ctk.CTkEntry(
+            form, width=190, height=36, placeholder_text="чей чат слушать", border_color=LINE
+        )
         self.channel_entry.grid(row=0, column=1, sticky="w")
-        ctk.CTkLabel(form, text="Ник").grid(row=0, column=2, sticky="w", padx=(12, 6))
-        self.nick_entry = ctk.CTkEntry(form, width=130, placeholder_text="из токена")
-        self.nick_entry.grid(row=0, column=3, sticky="w")
-        ctk.CTkLabel(form, text="OAuth-токен").grid(row=0, column=4, sticky="w", padx=(12, 6))
-        self.token_entry = ctk.CTkEntry(form, width=240, show="*", placeholder_text="oauth:...")
-        self.token_entry.grid(row=0, column=5, sticky="ew")
-        self._show_token = ctk.CTkButton(form, text="Показать", width=88, command=self._toggle_token)
-        self._show_token.grid(row=0, column=6, padx=(8, 4))
-        self.login_btn = ctk.CTkButton(form, text="Войти через Twitch", width=200, command=self._open_login)
-        self.login_btn.grid(row=1, column=0, columnspan=4, sticky="w", padx=(4, 0), pady=(8, 0))
+        self.account_label = ctk.CTkLabel(form, text="Вход не выполнен", text_color=MUTED, anchor="w")
+        self.account_label.grid(row=0, column=2, sticky="w", padx=(16, 8))
+        actions = ctk.CTkFrame(form, fg_color="transparent")
+        actions.grid(row=0, column=4, sticky="e")
+        self.login_btn = self._ghost(actions, "Войти через Twitch", self._open_login, 168)
+        self.login_btn.pack(side="left", padx=(0, 8))
+        self.wiki_btn = self._ghost(actions, "Вики", self._open_wiki, 72)
+        self.wiki_btn.pack(side="left", padx=(0, 8))
+        self.stop_btn = ctk.CTkButton(
+            actions,
+            text="Стоп",
+            width=84,
+            height=34,
+            command=self._on_stop,
+            state="disabled",
+            fg_color=DANGER_OFF,
+            hover_color=DANGER_HOVER,
+            text_color=INK,
+        )
+        self.stop_btn.pack(side="left", padx=(0, 8))
+        self.start_btn = ctk.CTkButton(
+            actions,
+            text="Старт",
+            width=96,
+            height=34,
+            command=self._on_start,
+            fg_color=START,
+            hover_color=START_HOVER,
+        )
+        self.start_btn.pack(side="left")
 
-        self.update_bar = ctk.CTkFrame(header)
-        self.update_bar.grid(row=2, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8))
+        self.update_bar = ctk.CTkFrame(header, fg_color="#1c2a44", corner_radius=12)
+        self.update_bar.grid(row=2, column=0, sticky="ew", padx=16, pady=(8, 0))
         self.update_bar.grid_columnconfigure(0, weight=1)
-        self.update_label = ctk.CTkLabel(self.update_bar, text="", anchor="w")
-        self.update_label.grid(row=0, column=0, sticky="ew", padx=10, pady=8)
-        self.update_later = ctk.CTkButton(self.update_bar, text="Позже", width=80, command=self._dismiss_update)
+        self.update_label = ctk.CTkLabel(self.update_bar, text="", anchor="w", text_color=INK)
+        self.update_label.grid(row=0, column=0, sticky="ew", padx=12, pady=8)
+        self.update_later = self._ghost(self.update_bar, "Позже", self._dismiss_update, 80)
         self.update_later.grid(row=0, column=1, padx=4, pady=8)
-        self.update_now = ctk.CTkButton(self.update_bar, text="Обновить", width=110, command=self._confirm_update)
+        self.update_now = ctk.CTkButton(
+            self.update_bar,
+            text="Обновить",
+            width=110,
+            height=34,
+            command=self._confirm_update,
+            fg_color=ACCENT,
+            hover_color=ACCENT_HOVER,
+        )
         self.update_now.grid(row=0, column=2, padx=(4, 10), pady=8)
         self.update_bar.grid_remove()
 
+        ctk.CTkLabel(
+            header,
+            text="Скрипт команды может делать на компьютере всё, что может Python от вашего имени.",
+            text_color=MUTED,
+            anchor="w",
+        ).grid(row=3, column=0, sticky="ew", padx=16, pady=(8, 14))
+
         if self.cfg.channel:
             self.channel_entry.insert(0, self.cfg.channel)
-        if self.cfg.nickname:
-            self.nick_entry.insert(0, self.cfg.nickname)
-        if self.cfg.token:
-            self.token_entry.insert(0, self.cfg.token)
-
-        note = ctk.CTkLabel(
-            self,
-            text="Скрипты выполняются с правами вашего пользователя и могут делать всё, что может Python на этом компьютере.",
-            text_color="#9aa0a6",
-            anchor="w",
-            wraplength=880,
-            justify="left",
-        )
-        note.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 4))
+        self._refresh_account()
 
         body = ctk.CTkFrame(self, fg_color="transparent")
-        body.grid(row=2, column=0, sticky="nsew", padx=16, pady=6)
+        body.grid(row=1, column=0, sticky="nsew", padx=18, pady=4)
         body.grid_columnconfigure(1, weight=1)
         body.grid_rowconfigure(0, weight=1)
 
-        sidebar = ctk.CTkFrame(body)
-        sidebar.grid(row=0, column=0, sticky="ns", padx=(0, 10))
+        sidebar = self._card(body)
+        sidebar.grid(row=0, column=0, sticky="ns", padx=(0, 12))
         sidebar.grid_rowconfigure(1, weight=1)
         sidebar.grid_columnconfigure(0, weight=1)
-        ctk.CTkButton(sidebar, text="Новая команда", command=self._new_command).grid(
-            row=0, column=0, sticky="ew", padx=10, pady=(10, 6)
+        side_head = ctk.CTkFrame(sidebar, fg_color="transparent")
+        side_head.grid(row=0, column=0, sticky="ew", padx=14, pady=(14, 6))
+        side_head.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(side_head, text="Команды", font=ctk.CTkFont(size=16, weight="bold"), text_color=INK).grid(
+            row=0, column=0, sticky="w"
         )
-        self.list_frame = ctk.CTkScrollableFrame(sidebar, width=280, label_text="Команды")
-        self.list_frame.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 10))
+        ctk.CTkButton(
+            side_head,
+            text="Новая",
+            width=78,
+            height=32,
+            command=self._new_command,
+            fg_color=ACCENT,
+            hover_color=ACCENT_HOVER,
+        ).grid(row=0, column=1, sticky="e")
+        self.list_frame = ctk.CTkScrollableFrame(sidebar, width=292, fg_color="transparent")
+        self.list_frame.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 12))
 
-        editor = ctk.CTkFrame(body)
+        editor = self._card(body)
         editor.grid(row=0, column=1, sticky="nsew")
-        editor.grid_columnconfigure(1, weight=1)
-        editor.grid_rowconfigure(4, weight=1)
+        editor.grid_columnconfigure(0, weight=1)
+        editor.grid_rowconfigure(2, weight=1)
 
-        ctk.CTkLabel(editor, text="Триггер").grid(row=0, column=0, sticky="w", padx=12, pady=(12, 4))
-        self.trigger_entry = ctk.CTkEntry(editor, placeholder_text="!hello")
-        self.trigger_entry.grid(row=0, column=1, sticky="ew", padx=12, pady=(12, 4))
+        meta = ctk.CTkFrame(editor, fg_color="transparent")
+        meta.grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 4))
+        meta.grid_columnconfigure(1, weight=1)
+        meta.grid_columnconfigure(3, weight=1)
+        ctk.CTkLabel(meta, text="Команда", text_color=MUTED).grid(row=0, column=0, sticky="w", padx=(0, 8))
+        self.trigger_entry = ctk.CTkEntry(meta, height=36, placeholder_text="!hello", border_color=LINE)
+        self.trigger_entry.grid(row=0, column=1, sticky="ew", padx=(0, 16))
+        ctk.CTkLabel(meta, text="О чём", text_color=MUTED).grid(row=0, column=2, sticky="w", padx=(0, 8))
+        self.desc_entry = ctk.CTkEntry(meta, height=36, placeholder_text="коротко для себя", border_color=LINE)
+        self.desc_entry.grid(row=0, column=3, sticky="ew")
+        ctk.CTkLabel(meta, text="Пауза, сек", text_color=MUTED).grid(row=1, column=0, sticky="w", padx=(0, 8), pady=(8, 0))
+        self.cooldown_entry = ctk.CTkEntry(meta, width=90, height=36, placeholder_text="0", border_color=LINE)
+        self.cooldown_entry.grid(row=1, column=1, sticky="w", pady=(8, 0))
+        ctk.CTkLabel(meta, text="Кто может", text_color=MUTED).grid(row=1, column=2, sticky="w", padx=(0, 8), pady=(8, 0))
+        self.perm_menu = ctk.CTkOptionMenu(
+            meta, values=list(PERM_LABELS.values()), width=220, height=36, fg_color=SOFT, button_color=SOFT
+        )
+        self.perm_menu.grid(row=1, column=3, sticky="w", pady=(8, 0))
 
-        ctk.CTkLabel(editor, text="Описание").grid(row=1, column=0, sticky="w", padx=12, pady=4)
-        self.desc_entry = ctk.CTkEntry(editor)
-        self.desc_entry.grid(row=1, column=1, sticky="ew", padx=12, pady=4)
-
-        ctk.CTkLabel(editor, text="Кулдаун, сек").grid(row=2, column=0, sticky="w", padx=12, pady=4)
-        self.cooldown_entry = ctk.CTkEntry(editor, width=80)
-        self.cooldown_entry.grid(row=2, column=1, sticky="w", padx=12, pady=4)
-
-        ctk.CTkLabel(editor, text="Кто может вызвать").grid(row=3, column=0, sticky="w", padx=12, pady=4)
-        self.perm_menu = ctk.CTkOptionMenu(editor, values=list(PERM_LABELS.values()), width=220)
-        self.perm_menu.grid(row=3, column=1, sticky="w", padx=12, pady=4)
-
+        ctk.CTkLabel(editor, text="Код  ·  def run(ctx)", anchor="w", text_color=MUTED).grid(
+            row=1, column=0, sticky="w", padx=16, pady=(10, 0)
+        )
         self.script_box = ctk.CTkTextbox(
             editor,
             font=ctk.CTkFont(family=MONO, size=13),
@@ -184,34 +265,60 @@ class App(ctk.CTk):
             undo=True,
             autoseparators=True,
             maxundo=80,
+            fg_color="#10141b",
+            border_width=1,
+            border_color=LINE,
         )
-        self.script_box.grid(row=4, column=0, columnspan=2, sticky="nsew", padx=12, pady=8)
+        self.script_box.grid(row=2, column=0, sticky="nsew", padx=16, pady=8)
         bind_paste(self, self.script_box)
         attach_highlight(self.script_box)
 
         buttons = ctk.CTkFrame(editor, fg_color="transparent")
-        buttons.grid(row=5, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 12))
-        self.save_btn = ctk.CTkButton(buttons, text="Сохранить", command=self._save_editor)
-        self.save_btn.grid(row=0, column=0, padx=(0, 6), pady=2, sticky="w")
-        self.delete_btn = ctk.CTkButton(
-            buttons, text="Удалить", fg_color="#8c3a3a", hover_color="#6e2e2e", command=self._delete_command
+        buttons.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 14))
+        buttons.grid_columnconfigure(5, weight=1)
+        self.save_btn = ctk.CTkButton(
+            buttons, text="Сохранить", height=34, command=self._save_editor, fg_color=ACCENT, hover_color=ACCENT_HOVER
         )
-        self.delete_btn.grid(row=0, column=1, padx=6, pady=2, sticky="w")
-        self.test_btn = ctk.CTkButton(buttons, text="Проверить", command=self._test_command)
-        self.test_btn.grid(row=0, column=2, padx=6, pady=2, sticky="w")
-        self.paste_btn = ctk.CTkButton(buttons, text="Вставить", command=self._paste_script)
-        self.paste_btn.grid(row=1, column=0, padx=(0, 6), pady=2, sticky="w")
-        self.import_btn = ctk.CTkButton(buttons, text="Импорт .py", command=self._import_py)
-        self.import_btn.grid(row=1, column=1, padx=6, pady=2, sticky="w")
-        self.prompt_btn = ctk.CTkButton(buttons, text="Для нейросети", command=self._copy_prompt)
-        self.prompt_btn.grid(row=1, column=2, padx=6, pady=2, sticky="w")
+        self.save_btn.grid(row=0, column=0, padx=(0, 6))
+        self.test_btn = self._ghost(buttons, "Проверить", self._test_command, 110)
+        self.test_btn.grid(row=0, column=1, padx=6)
+        self.paste_btn = self._ghost(buttons, "Вставить", self._paste_script, 96)
+        self.paste_btn.grid(row=0, column=2, padx=6)
+        self.prompt_btn = ctk.CTkButton(
+            buttons,
+            text="Для нейросети",
+            width=150,
+            height=34,
+            command=self._copy_prompt,
+            fg_color=AI,
+            hover_color=AI_HOVER,
+        )
+        self.prompt_btn.grid(row=0, column=3, padx=6)
+        self.delete_btn = ctk.CTkButton(
+            buttons,
+            text="Удалить",
+            height=34,
+            fg_color=DANGER,
+            hover_color=DANGER_HOVER,
+            command=self._delete_command,
+        )
+        self.delete_btn.grid(row=0, column=6, sticky="e")
 
-        log_frame = ctk.CTkFrame(self)
-        log_frame.grid(row=3, column=0, sticky="ew", padx=16, pady=(4, 14))
+        log_frame = self._card(self)
+        log_frame.grid(row=2, column=0, sticky="ew", padx=18, pady=(8, 16))
         log_frame.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(log_frame, text="Лог", anchor="w").grid(row=0, column=0, sticky="w", padx=10, pady=(8, 0))
-        self.log_box = ctk.CTkTextbox(log_frame, height=120, font=ctk.CTkFont(family=MONO, size=12), state="disabled")
-        self.log_box.grid(row=1, column=0, sticky="ew", padx=10, pady=(4, 10))
+        ctk.CTkLabel(log_frame, text="Журнал", anchor="w", text_color=MUTED).grid(
+            row=0, column=0, sticky="w", padx=14, pady=(10, 0)
+        )
+        self.log_box = ctk.CTkTextbox(
+            log_frame,
+            height=108,
+            font=ctk.CTkFont(family=MONO, size=12),
+            state="disabled",
+            fg_color="#10141b",
+            border_width=0,
+        )
+        self.log_box.grid(row=1, column=0, sticky="ew", padx=10, pady=(2, 10))
 
     def append_log(self, text: str) -> None:
         if self._closing:
@@ -237,13 +344,16 @@ class App(ctk.CTk):
         if self._closing:
             return
 
+        self._status_kind = kind
+
         def _apply() -> None:
             if self._closing or not self.winfo_exists():
                 return
+            self._status_kind = kind
             colors = {
-                "idle": ("#9aa0a6", "Не подключён"),
+                "idle": (MUTED, "Не подключён"),
                 "connecting": ("#e6b35a", "Подключение…"),
-                "online": ("#3ddc84", "В сети"),
+                "online": (OK, "В сети"),
                 "stopping": ("#e6b35a", "Отключение…"),
                 "error": ("#ff6b6b", "Ошибка"),
             }
@@ -251,9 +361,20 @@ class App(ctk.CTk):
             if kind == "error" and detail:
                 label = f"Ошибка: {detail}"
             self.status_label.configure(text=label[:90], text_color=color)
-            running = kind in ("connecting", "online", "stopping")
-            self.start_btn.configure(state="disabled" if running else "normal")
-            self.stop_btn.configure(state="normal" if kind in ("connecting", "online") else "disabled")
+            self.status_dot.configure(text_color=color)
+            alive = self.bot.running()
+            can_start = not alive and kind not in ("connecting", "online", "stopping")
+            self.start_btn.configure(
+                state="normal" if can_start else "disabled",
+                fg_color=START if can_start else START_OFF,
+                hover_color=START_HOVER,
+            )
+            can_stop = alive and kind == "online"
+            self.stop_btn.configure(
+                state="normal" if can_stop else "disabled",
+                fg_color=DANGER if can_stop else DANGER_OFF,
+                hover_color=DANGER_HOVER,
+            )
 
         self.after(0, _apply)
 
@@ -272,8 +393,7 @@ class App(ctk.CTk):
             self.cfg.refresh_token = session.refresh_token
             if session.login:
                 self.cfg.nickname = session.login
-                self._set_entry(self.nick_entry, session.login)
-            self._set_entry(self.token_entry, session.token)
+            self._refresh_account()
             save_config(self.cfg)
 
         self.after(0, _apply)
@@ -302,21 +422,21 @@ class App(ctk.CTk):
         self.cfg.refresh_token = session.refresh_token
         if session.login:
             self.cfg.nickname = session.login
-            self._set_entry(self.nick_entry, session.login)
-        self._set_entry(self.token_entry, session.token)
+        self._refresh_account()
         save_config(self.cfg)
         self.bot.update_config(self.cfg)
         who = session.login or "аккаунт"
         self.append_log(f"Вход выполнен: {who}. Можно нажимать «Старт».")
         self._close_login()
 
-    def _toggle_token(self) -> None:
-        if self.token_entry.cget("show") == "*":
-            self.token_entry.configure(show="")
-            self._show_token.configure(text="Скрыть")
+    def _refresh_account(self) -> None:
+        nick = self.cfg.nickname.strip()
+        if nick:
+            self.account_label.configure(text=f"Аккаунт: {nick}", text_color=OK)
+            self.login_btn.configure(text="Сменить аккаунт")
         else:
-            self.token_entry.configure(show="*")
-            self._show_token.configure(text="Показать")
+            self.account_label.configure(text="Вход не выполнен", text_color=MUTED)
+            self.login_btn.configure(text="Войти через Twitch")
 
     def refresh_list(self) -> None:
         self._building = True
@@ -325,24 +445,37 @@ class App(ctk.CTk):
                 child.destroy()
             self._rows.clear()
             if not self.cfg.commands:
-                ctk.CTkLabel(self.list_frame, text="Команд пока нет", text_color="#9aa0a6").pack(anchor="w", padx=6, pady=8)
+                ctk.CTkLabel(
+                    self.list_frame,
+                    text="Пока пусто.\nНажмите «Новая».",
+                    text_color=MUTED,
+                    justify="left",
+                ).pack(anchor="w", padx=8, pady=12)
                 return
             for command in self.cfg.commands:
-                row = ctk.CTkFrame(self.list_frame, fg_color="transparent")
-                row.pack(fill="x", padx=2, pady=3)
+                row = ctk.CTkFrame(self.list_frame, fg_color=SOFT, corner_radius=12)
+                row.pack(fill="x", padx=4, pady=4)
                 row.grid_columnconfigure(0, weight=1)
-                title = ctk.CTkLabel(row, text=command.trigger, anchor="w", font=ctk.CTkFont(size=14, weight="bold"))
-                title.grid(row=0, column=0, sticky="w", padx=8, pady=(6, 0))
-                switch = ctk.CTkSwitch(row, text="", width=46)
+                title = ctk.CTkLabel(
+                    row,
+                    text=command.trigger,
+                    anchor="w",
+                    font=ctk.CTkFont(size=14, weight="bold"),
+                    text_color=INK if command.enabled else MUTED,
+                )
+                title.grid(row=0, column=0, sticky="w", padx=10, pady=(8, 0))
+                switch = ctk.CTkSwitch(row, text="", width=46, progress_color=ACCENT)
                 if command.enabled:
                     switch.select()
                 else:
                     switch.deselect()
                 switch.configure(command=lambda cid=command.id: self._toggle(cid))
-                switch.grid(row=0, column=1, padx=8, pady=(6, 0))
+                switch.grid(row=0, column=1, padx=(4, 8), pady=(8, 0))
                 description = command.description.strip() or "без описания"
-                desc = ctk.CTkLabel(row, text=description, anchor="w", text_color="#9aa0a6", wraplength=220, justify="left")
-                desc.grid(row=1, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 6))
+                desc = ctk.CTkLabel(
+                    row, text=description, anchor="w", text_color=MUTED, wraplength=210, justify="left"
+                )
+                desc.grid(row=1, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 8))
                 for widget in (row, title, desc):
                     widget.bind("<Button-1>", lambda _event, cid=command.id: self._select(cid))
                 self._rows[command.id] = row
@@ -353,9 +486,9 @@ class App(ctk.CTk):
     def _paint_selection(self) -> None:
         for command_id, row in self._rows.items():
             if command_id == self._selected_id:
-                row.configure(fg_color=("#d7e6f5", "#1f3b57"))
+                row.configure(fg_color="#1c3358", border_width=1, border_color=ACCENT)
             else:
-                row.configure(fg_color="transparent")
+                row.configure(fg_color=SOFT, border_width=0)
 
     def _find(self, command_id: str | None) -> Command | None:
         for command in self.cfg.commands:
@@ -509,27 +642,6 @@ class App(ctk.CTk):
         except OSError:
             self.append_log("Страница вики не найдена.")
 
-    def _import_py(self) -> None:
-        if not self._confirm_discard():
-            return
-        chosen = filedialog.askopenfilename(
-            title="Импорт скрипта",
-            filetypes=[("Python", "*.py"), ("Все файлы", "*.*")],
-        )
-        if not chosen:
-            return
-        try:
-            command = import_script(Path(chosen), self.cfg.commands)
-        except OSError as exc:
-            messagebox.showerror("Импорт", str(exc))
-            return
-        self.cfg.commands.append(command)
-        save_config(self.cfg)
-        self.bot.update_config(self.cfg)
-        self.refresh_list()
-        self._show_command(command.id)
-        self.append_log(f"Импортирована {command.trigger}")
-
     def _test_command(self) -> None:
         command = self._find(self._selected_id)
         if command is None:
@@ -567,8 +679,6 @@ class App(ctk.CTk):
 
     def _remember_connection(self) -> None:
         self.cfg.channel = normalize_channel(self.channel_entry.get())
-        self.cfg.nickname = self.nick_entry.get().strip()
-        self.cfg.token = self.token_entry.get().strip()
         self._set_entry(self.channel_entry, self.cfg.channel)
         save_config(self.cfg)
         self.bot.update_config(self.cfg)
@@ -580,7 +690,7 @@ class App(ctk.CTk):
         self.bot.start()
 
     def _on_stop(self) -> None:
-        if not self.bot.running():
+        if self._status_kind != "online" or not self.bot.running():
             return
         self.set_status("stopping", "")
         self.append_log("Отключение…")
@@ -590,6 +700,9 @@ class App(ctk.CTk):
             if self.bot.running():
                 self.append_log("Не удалось остановить бота")
                 self.set_status("error", "не остановился")
+                return
+            if self._status_kind in ("stopping", "idle"):
+                self.set_status("idle", "")
 
         threading.Thread(target=work, daemon=True).start()
 

@@ -229,23 +229,6 @@ def create_command(commands: list[Command]) -> Command:
     return command
 
 
-def import_script(source: Path, commands: list[Command]) -> Command:
-    command_id = uuid.uuid4().hex[:8]
-    text = source.read_text(encoding="utf-8")
-    stem = "".join("_" if char.isspace() else char for char in (source.stem.strip() or "imported"))
-    command = Command(
-        id=command_id,
-        trigger=unique_trigger(stem, commands),
-        description=f"Импортировано из {source.name}",
-        enabled=True,
-        script=f"{command_id}.py",
-        cooldown_sec=0,
-        permission="all",
-    )
-    write_script(command, text)
-    return command
-
-
 def delete_command_file(command: Command) -> None:
     path = command.script_path()
     if path.is_file() and path.parent == COMMANDS_DIR:

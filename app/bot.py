@@ -59,6 +59,7 @@ class TwitchService:
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._starting = False
+        self._running = False
 
     def update_config(self, config: Config) -> None:
         with self._lock:
@@ -72,11 +73,13 @@ class TwitchService:
         self._on_log(text)
 
     def running(self) -> bool:
-        return self._thread is not None and self._thread.is_alive()
+        return self._running
 
     def start(self) -> None:
         with self._lock:
-            if self._starting or (self._thread is not None and self._thread.is_alive()):
+            if self._starting or self._running:
+                self._on_status("online" if self._bot is not None else "connecting", "")
+                self.log("Бот уже запущен. Нажмите «Стоп», чтобы отключить.")
                 return
             config = self._config
             channel = normalize_channel(config.channel)
@@ -87,6 +90,7 @@ class TwitchService:
                 self.log("Нужны канал и вход через Twitch")
                 return
             self._starting = True
+            self._running = True
             self._stop.clear()
         self._on_status("connecting", "")
         self._thread = threading.Thread(target=self._run, name="openbot-twitch", daemon=True)
@@ -94,18 +98,6 @@ class TwitchService:
 
     def stop(self) -> None:
         self._stop.set()
-        for _ in range(50):
-            if self._bot is not None or not self.running():
-                break
-            threading.Event().wait(0.1)
-        loop = self._loop
-        bot = self._bot
-        if loop is not None and bot is not None and loop.is_running():
-            future = asyncio.run_coroutine_threadsafe(bot.close(), loop)  # type: ignore[attr-defined]
-            try:
-                future.result(timeout=8)
-            except Exception as exc:
-                self.log(f"Ошибка при остановке: {exc}")
         thread = self._thread
         if thread is not None and thread.is_alive() and thread is not threading.current_thread():
             thread.join(timeout=8)
@@ -123,6 +115,7 @@ class TwitchService:
             self._loop = None
             loop.close()
             self._starting = False
+            self._running = False
             self._on_done(exc)
             return
 
@@ -133,15 +126,36 @@ class TwitchService:
             self._bot = bot
             if self._stop.is_set():
                 return
-            await bot.start()
+            started = asyncio.create_task(bot.start())
+            while not started.done():
+                if self._stop.is_set():
+                    await _close_client(bot)
+                    break
+                await asyncio.sleep(0.1)
+            if started.done():
+                if not started.cancelled():
+                    failure = started.exception()
+                    if failure is not None and not self._stop.is_set():
+                        raise failure
+                return
+            try:
+                await asyncio.wait_for(asyncio.shield(started), timeout=4)
+            except Exception:
+                started.cancel()
+            try:
+                await started
+            except (asyncio.CancelledError, Exception):
+                pass
 
         try:
             loop.run_until_complete(main())
         except Exception as exc:
             error = exc
-            self.log(f"Не удалось подключиться: {exc}")
+            if not self._stop.is_set():
+                self.log(f"Не удалось подключиться: {exc}")
         finally:
             try:
+                loop.run_until_complete(_release_loop(self._bot))
                 loop.run_until_complete(loop.shutdown_asyncgens())
             except Exception:
                 pass
@@ -149,6 +163,7 @@ class TwitchService:
             self._loop = None
             self._bot = None
             self._starting = False
+            self._running = False
             self._on_done(error)
 
     def _prepare_token(self) -> None:
@@ -247,6 +262,45 @@ def _author_flags(author, channel_name: str) -> tuple[bool, bool]:
     )
     is_mod = bool(getattr(author, "is_mod", False)) or "moderator" in badges or is_broadcaster
     return is_mod, is_broadcaster
+
+
+async def _cancel_pending(timeout: float) -> None:
+    current = asyncio.current_task()
+    pending = [task for task in asyncio.all_tasks() if task is not current and not task.done()]
+    for task in pending:
+        task.cancel()
+    if pending:
+        await asyncio.wait(pending, timeout=timeout)
+
+
+async def _release_loop(bot: object | None) -> None:
+    """Отменяет фоновые задачи Twitch и закрывает HTTP-сессию, не дожидаясь их вечно."""
+    await _cancel_pending(2)
+    http = getattr(bot, "_http", None)
+    session = getattr(http, "session", None) if http is not None else None
+    if session is not None and not getattr(session, "closed", True):
+        try:
+            await asyncio.wait_for(session.close(), timeout=2)
+        except Exception:
+            pass
+    await _cancel_pending(1)
+
+
+async def _close_client(bot: object) -> None:
+    """Просит Twitch отключиться. close() до конца connect() сам по себе соединение не отпускает."""
+    for _ in range(40):
+        if getattr(bot, "_closing", None) is not None:
+            break
+        await asyncio.sleep(0.05)
+    closing = getattr(bot, "_closing", None)
+    if closing is not None:
+        closing.set()
+    try:
+        await asyncio.wait_for(bot.close(), timeout=3)  # type: ignore[attr-defined]
+    except Exception:
+        closing = getattr(bot, "_closing", None)
+        if closing is not None:
+            closing.set()
 
 
 def _make_client(service: TwitchService, loop: asyncio.AbstractEventLoop):
