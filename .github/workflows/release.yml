@@ -2,6 +2,8 @@ name: Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*"
   workflow_dispatch:
@@ -9,9 +11,39 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  version:
+    name: Номер версии
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.next.outputs.tag }}
+    steps:
+      - name: Следующий номер
+        id: next
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF_NAME}"
+          else
+            latest=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name)
+            if [[ ! "$latest" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              echo "Последний релиз не в формате vX.Y.Z: ${latest}" >&2
+              exit 1
+            fi
+            tag="v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))"
+          fi
+          echo "Версия ${tag}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
   build:
     name: Сборка (${{ matrix.artifact }})
+    needs: version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -36,7 +68,7 @@ jobs:
 
       - name: Сборка
         env:
-          OPENBOT_VERSION: ${{ github.ref_name }}
+          OPENBOT_VERSION: ${{ needs.version.outputs.tag }}
         run: python scripts/build.py
 
       - uses: actions/upload-artifact@v4
@@ -47,8 +79,8 @@ jobs:
 
   release:
     name: Релиз на GitHub
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [version, build]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -63,7 +95,9 @@ jobs:
       - name: Опубликовать
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
         run: |
+          set -euo pipefail
           printf '%s\n' \
             'Сборки окна OpenBot.' \
             '' \
@@ -72,7 +106,21 @@ jobs:
             '' \
             'Для команд на компьютере нужен Python 3.11 или новее: скрипты запускает он, а не само окно. Настройки появятся в папке data рядом с приложением.' \
             > notes.md
-          gh release create "${GITHUB_REF_NAME}" dist/release/*.zip \
-            --repo "${GITHUB_REPOSITORY}" \
-            --title "${GITHUB_REF_NAME}" \
-            --notes-file notes.md
+          shopt -s nullglob
+          files=(dist/release/*.zip)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "В dist/release нет zip" >&2
+            exit 1
+          fi
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            gh release create "$TAG" "${files[@]}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "$TAG" \
+              --notes-file notes.md
+          else
+            gh release create "$TAG" "${files[@]}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --target "${GITHUB_SHA}" \
+              --title "$TAG" \
+              --notes-file notes.md
+          fi
