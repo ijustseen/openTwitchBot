@@ -12,18 +12,37 @@ from app.update import UpdateOffer
 
 
 def open_app() -> App:
-    """На Windows в GitHub Actions чтение init.tcl иногда срывается и проходит со следующей попытки."""
+    """На Windows в GitHub Actions Tcl иногда не открывает окно и проходит со следующей попытки."""
     last: BaseException | None = None
     for attempt in range(5):
         try:
             return App()
         except tkinter.TclError as exc:
             last = exc
-            if "init.tcl" not in str(exc) or attempt == 4:
+            tkinter._default_root = None
+            if attempt == 4:
                 raise
             time.sleep(0.2)
     assert last is not None
     raise last
+
+
+def test_open_app_retries_a_tcl_error(monkeypatch) -> None:
+    calls = {"n": 0}
+
+    class Marker:
+        pass
+
+    def flaky() -> Marker:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise tkinter.TclError('invalid command name "tcl_findLibrary"')
+        return Marker()
+
+    monkeypatch.setitem(open_app.__globals__, "App", flaky)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    assert isinstance(open_app(), Marker)
+    assert calls["n"] == 2
 
 
 def test_window_shows_example_command(tmp_path: Path, monkeypatch) -> None:

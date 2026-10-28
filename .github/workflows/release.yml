@@ -63,6 +63,19 @@ jobs:
       - name: Зависимости
         run: python -m pip install -r requirements-build.txt pytest
 
+      - name: Копия Tcl
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $prefix = python -c "import sys; print(sys.base_prefix)"
+          $dest = "C:\openbot-tcl"
+          Copy-Item -Recurse -Force (Join-Path $prefix "tcl") $dest
+          if (-not (Test-Path "$dest\tcl8.6\init.tcl")) {
+            throw "init.tcl не скопировался"
+          }
+          "TCL_LIBRARY=$dest\tcl8.6" >> $env:GITHUB_ENV
+          "TK_LIBRARY=$dest\tk8.6" >> $env:GITHUB_ENV
+
       - name: Тесты
         run: python -m pytest
 
